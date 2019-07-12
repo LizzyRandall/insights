@@ -1,3 +1,9 @@
+Modified version of the resource library below. The only piece used was the obiee.js file that I added a new method called executeReport to.
+
+I am not an OBIEE developer but a Siebel developer who wanted to used OpenUI to call OBIEE reports and get the data back to display in the UI with ChartJS.
+
+So the visualization part was not used, just the obiee.js file
+
 Insights - An Open-Source Visualisation Platform for OBIEE
 ===
 
