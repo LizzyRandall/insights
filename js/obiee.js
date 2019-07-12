@@ -2,8 +2,8 @@
  * @overview RM Insights OBIEE module
  * @version 1.00
  * @author Minesh Patel
+////////////////////@HEAVILY EDITED BY LIZZY RANDALL, CRU 2018
 */
-
 /**
 	* OBIEE integration module containing all of the functions required to interface with the BI server. This
 	* includes session management, dynamic querying, metadata management and catalogue interface.
@@ -23,9 +23,8 @@ var obiee = (function() {
 		* each other but the version can be changed/overidden here if necessary.
 		* @memberOf module:obiee
 	*/
-	var wsdl = InsightsConfig.WSDLVersion;
-	var obieeURL = '/analytics-ws/saw.dll';
-
+	var wsdl = 'v6';
+	var obieeURL = '/analytics/saw.dll';
 	/**
 		* Generic OBIEE web service call. URL should be of the form `http(s)://<biserver>:<port>/analytics-ws/saw.dll`.
 		* RegEx is used to automatically guess the server and port from the current page URL.
@@ -41,6 +40,7 @@ var obiee = (function() {
 		// Parse the response text from the server
 		function parseResponse(response, successFunc, errorFunc) {
 			response = cleanupXML(response);
+            var inputResponse = response;
 
 			try {
 				response = $.xml2json(response); // Should remove the encoding line if it appears
@@ -51,10 +51,7 @@ var obiee = (function() {
 				if (!errorFunc){
 					var errMsg = response.Body.Fault.faultstring;
 					if (/Invalid session ID or session expired/.exec(response.Body.Fault.faultstring)) { // Check if session has expired and logout
-						obiee.logoff(function() { // Logoff and navigate to homepage
-							window.location.href = '/insights';
-						});
-
+                        
 					} else if (/getGroups operation is not supported/.exec(response.Body.Fault.faultstring)) { // getGroups was deprecated in 12.2.1.3. It is a part of workaround. The other part is in getAppRoles
 						successFunc(response);
 					}
@@ -70,14 +67,17 @@ var obiee = (function() {
 			} else
 				successFunc(response);
 		}
-
-		$.ajax({
-			url: obieeURL + '?SOAPImpl=' + service,
+        var settings = {
+            url: window.origin + obieeURL + '?SOAPImpl=' + service,
 			type: "POST",
-			dataType: "xml",
 			data: inpData,
-			contentType: "text/xml; charset=\"utf-8\""
-		}).done(function(response) {
+            crossDomain: true,
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "cache-control": "no-cache"
+            }
+		};
+		$.ajax(settings).done(function(response) {
 			response = new XMLSerializer().serializeToString(response.documentElement);
 			parseResponse(response, successFunc, errorFunc);
 		}).fail(function(jqXHR, textStatus, errorThrown) {
@@ -97,8 +97,9 @@ var obiee = (function() {
 	}
 
 	/** SOAP header required for all OBIEE web service requests */
+    //com.siebel.analytics.web/soap/v1
 	function obieeSOAPHeader() {
-		return '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:'+wsdl+'="urn://oracle.bi.webservices/'+wsdl+'" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Header/>';
+        return '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:'+wsdl+'="urn://oracle.bi.webservices/'+wsdl+'" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Header/>';
 	}
 
 	/** SOAP WSDL service URL */
@@ -146,9 +147,7 @@ var obiee = (function() {
 			sessionId = response.Body.logonResult.sessionID.text;
 			sessionStorage.obieeSessionId = sessionId;
 			createCookie('ORA_BIPS_NQID', sessionId, 1, '/');
-			obiee.setRMPermissions(function() {
-				successFunc();
-			});
+            successFunc();
 		}, function(err) {
 			if (err.faultstring)
 				errFunc(err.faultstring)
@@ -246,6 +245,23 @@ var obiee = (function() {
 	
 		}, errFunc);
 	}
+    
+    /*variables is an array of pair/value objects, name,value properties*/
+    obiee.getReportParamsWithVariables = function(variables){
+        if(variables.length < 0)
+            return "";
+        
+        var reportParamsString = "";
+        var row = 0;
+        var length = variables.length;
+        for (row = 0; row < length; row++) {
+            reportParamsString += "<" + wsdl + ":variables>";
+            reportParamsString += "<" + wsdl + ":name>" + variables[row].name + "</" + wsdl + ":name>";
+            reportParamsString += "<" + wsdl + ":value>" + variables[row].value + "</" + wsdl + ":value>";
+            reportParamsString += "</" + wsdl + ":variables>";
+        }
+        return reportParamsString; 
+    }
 
 	/** Array containing list of all RM application roles given to the user. Used on initialisation of pages. */
 	var RMAppRoles = [];
@@ -255,7 +271,7 @@ var obiee = (function() {
 		* @param {function} successFunc Callback function to execute once the permissions have been saved.
 		* @param {function} errFunc Callback function to execute once the permissions have been saved.
 	*/
-	obiee.setRMPermissions = function(successFunc, errFunc) {
+	/*obiee.setRMPermissions = function(successFunc, errFunc) {
 		function obieeToRM(callback) {
 			obiee.getAppRoles(function(appRoles) {
 				var rmRoles = [];
@@ -281,7 +297,7 @@ var obiee = (function() {
 			}
 		} else
 			successFunc();
-	}
+	}*/
 
 	/**
 		* Checks against session storage to see if the current user has a given RM web app privilege.
@@ -484,7 +500,7 @@ var obiee = (function() {
 
 		lsql += biQuery.Criteria.map(function(d) {
 			var col = parsePresVar(d.Code);
-			if (d.DataType == 'numeric' && InsightsConfig.NumericToDouble)
+			if (d.DataType == 'numeric')
 				col = 'CAST(' + d.Code + ' AS DOUBLE)';
 			return col;
 		}).join(',\n');
@@ -1269,8 +1285,8 @@ var obiee = (function() {
 		// Security based on system configuration: read for those with view, full for those with create
 
 		var acls = [
-			{ name: InsightsConfig.Security['view'], perms: 3 },
-			{ name: InsightsConfig.Security['create'], perms: 65535 },
+			{ name: 'AuthenticatedUser', perms: 3 },
+			{ name: 'AuthenticatedUser', perms: 65535 },
 		];
 
 		saveXML(xml, '/shared/RM-Insights/Published-Dashboards', successFunc, errFunc, acls);
@@ -1926,6 +1942,13 @@ var obiee = (function() {
 		} else
 			return false;
 	}
+    
+    function buildReportXML(reportObj){
+        var report = "<report";
+        report += "reportPath='" + reportObj.reportPath + "'>";
+        report += "</report>";  
+        
+    }
 
 	/** Builds sort XML from an array of obiee.BISort objects */
 	function buildSortXML(sort, criteria) {
@@ -2081,6 +2104,37 @@ var obiee = (function() {
 			successFunc(outputData);
 		});
 	}
+    
+    /*CREATED BY LIZZY, NOT ORIGINAL, it takes a copy of executeXML and instead makes it so a report path can be passed
+    instead of xml for OBIEE.
+    Report object properties: reportPath, reportParams, maxRows, successFunc, failFunc
+    */
+    obiee.executeReport = function(reportObj) {
+
+        reportObj.maxRows = !reportObj.maxRows || reportObj.maxRows === "" ? 30 : reportObj.maxRows;
+		var soapMessage = obieeSOAPHeader();
+		soapMessage += '<soapenv:Header/><soapenv:Body><'+wsdl+':executeXMLQuery><'+wsdl+':report><'+wsdl+':reportPath>' + reportObj.reportPath;
+		soapMessage += '</'+wsdl+':reportPath></'+wsdl+':report><'+wsdl+':outputFormat>SawRowsetData</'+wsdl+':outputFormat><'+wsdl+':executionOptions><'+wsdl+':async>TRUE</'+wsdl+':async>';
+		soapMessage += '<'+wsdl+':maxRowsPerPage>' + reportObj.maxRows + '</'+wsdl+':maxRowsPerPage><'+wsdl+':refresh>TRUE</'+wsdl+':refresh><'+wsdl+':presentationInfo>FALSE</'+wsdl+':presentationInfo><'+wsdl+':type>query</'+wsdl+':type>';
+		soapMessage += '</'+wsdl+':executionOptions><'+wsdl+':reportParams>' + reportObj.reportParams + '</'+wsdl+':reportParams><'+wsdl+':sessionID>' + sessionStorage.obieeSessionId + '</'+wsdl+':sessionID>';
+		soapMessage += '</'+wsdl+':executeXMLQuery></soapenv:Body></soapenv:Envelope>';
+
+		// Call web service
+		wsCall('xmlViewService', soapMessage, function(response) {
+			var rowset = response.Body.executeXMLQueryResult.return.rowset;
+			rowset = rowset.concat();
+
+			var outputData = $.xml2json(rowset);
+			outputData = outputData.Row;
+
+			if (!$.isArray(outputData))
+				outputData = [outputData];
+            
+			if (outputData.length == 2500)
+				console.warn('Warning: reached 2500 row limit for XML queries.');
+			reportObj.successFunc(outputData);
+		}, reportObj.failFunc);
+	};
 
 	/* ------ END OF INTERNAL XML OPERATIONS ------ */
 
@@ -2777,7 +2831,7 @@ var obiee = (function() {
                 callback();
             }
 		}, query, function(err) {
-			if (err.faultstring.indexOf('Invalid session ID') > -1)
+			if (err && err.faultString > "" && err.faultstring.indexOf('Invalid session ID') > -1)
 				obiee.logoff();
 		});
 	}
@@ -2900,22 +2954,22 @@ var obiee = (function() {
 			var formatString;
 			switch(this.DataType) {
 				case 'double':
-					formatString = InsightsConfig.DataFormats.double;
+					formatString = '.3s';
 					break;
 				case 'numeric':
-					formatString = InsightsConfig.DataFormats.numeric;
+					formatString = '.3s';
 					break;
 				case 'integer':
-					formatString = InsightsConfig.DataFormats.integer;
+					formatString = '.0f';
 					break;
 				case 'date':
-					formatString = InsightsConfig.DataFormats.date;
+					formatString = '%d/%m/%Y';
 					break;
 				case 'timestamp':
-					formatString = InsightsConfig.DataFormats.timestamp;
+					formatString = '%d/%m/%Y %H:%M';
 					break;
 				case 'varchar':
-					formatString = InsightsConfig.DataFormats.varchar;
+					formatString = '%s';
 					break;
 				default:
 					formatString = '%s';
@@ -2925,7 +2979,7 @@ var obiee = (function() {
 		}
 
 		/** Locality of the column for formatting purposes. Defaults to `rmvpp.defaults.locale`. */
-		this.Locale = locale || InsightsConfig.Locale;
+		this.Locale = locale || 'GB';
 
 		/** D3 data format string. Defaults using `getDefaultFormat`. */
 		this.DataFormat = dataFormat || this.getDefaultFormat();
@@ -2944,16 +2998,13 @@ var obiee = (function() {
 				var s = rmvpp.locales[locale].numberFormat(formatString)(value);
 			    switch (s[s.length - 1]) {
 					case "k":
-						if (InsightsConfig.SIPrefixes.hasOwnProperty('k'))
-							s = s.slice(0, -1) + InsightsConfig.SIPrefixes.k;
+							s = s.slice(0, -1) + 'k';
 						break;
-					case "M":
-						if (InsightsConfig.SIPrefixes.hasOwnProperty('M'))
-							s = s.slice(0, -1) + InsightsConfig.SIPrefixes.M;
+                    case "M":
+							s = s.slice(0, -1) + 'M';
 						break;
 			    	case "G":
-						if (InsightsConfig.SIPrefixes.hasOwnProperty('G'))
-							s = s.slice(0, -1) + InsightsConfig.SIPrefixes.G;
+							s = s.slice(0, -1) + 'G';
 						break;
 			    }
 			    return s;
